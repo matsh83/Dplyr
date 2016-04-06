@@ -1,0 +1,304 @@
+---
+title: " Going deeper with DPLYR"
+author: "Mats Hansson"
+date: "26 mars 2016"
+output: html_document
+---
+
+## Dply function 
+
+Great for data exploration  and transformation Inutatuve to write and easy to read, especially when using the "changing", syntax (covered below)
+
+
+
+
+## dplyr functionality
+Five basic verbs: "filter", "select", "arrange", "mutate", "summarise" (plus group_by)
+Can work with data stored in databases and data tables
+Joins: inner join, left join, semi-join, anti-join (not covered below)
+Window functions for calculating ranking, offsets, and more
+Better than plyr if you're only working with data frames (though it doesn't yet duplicate all of the plyr functionality)
+Examples below are based upon the latest release, version 0.2 (released May 2014)
+
+## Loading dplyr and an example dataset
+dplyr will mask a few base functions
+If you also use plyr, load plyr first
+hflights is flights departing from two Houston airports in 2011
+
+# load packages
+```{r}
+suppressMessages(library(dplyr))
+library(hflights)
+
+
+# explore data
+data(hflights)
+head(hflights)
+
+```
+
+* `tbl_sf` create a "local data frame" 
+* LOcal data frame is simply a wrapper for a data frame that prints nicely
+
+
+
+```{r}
+# convert to a local data frame
+flights<-tbl_df(hflights)
+# printing only shows 10 rows and as many columns as can fit on your screen 
+flights
+
+```
+
+```{r}
+# you can specify that you want to see more rows 
+print(flights, n=10)
+```
+
+
+```{r}
+# Make a condition
+filter(flights, Month==1, DayOfWeek==7)
+```
+
+
+
+```{r}
+# To select more than one condition
+filter(flights, UniqueCarrier %in% c("AA", "UA"))
+filter(flights, TailNum %in% c("N576AA", "N504AA" ))
+```
+
+
+# Select columns by name 
+```{r}
+select(flights, Year, Month)
+
+# use colons to select  multiple contigous columns and use `constains` to match columns by name
+# note: `starts_with`, `ends_with and `matches` can also be used to match columns 
+
+select(flights, Year, Month, contains("taxi"), contains("delay"))
+select(flights, Year, ends_with("taxi"), starts_with("Taxi"))
+select(flights, Year, matches("taxi"))
+```
+
+
+# Changing or piplining
+* Usual way to perform multiple operations in one line is by nesting
+* Can write commands in a natural order by using the `%>%` infix operator (which can be pronounced as "then")
+
+```{r}
+# chaining method
+flights %>% select(UniqueCarrier, Year) %>% filter(Year==2011)
+flights %>% select( Year, contains("Taxi")) %>% filter(Year==2011)
+flights %>% select(DepTime) %>% filter(DepTime<1400)
+flights %>% select (ArrTime) %>% filter(ArrTime %in% c(1500, 1501))
+```
+
+## arrange: Reorders rows 
+
+```{r}
+flights %>% 
+  select(Year, Month) %>%
+  arrange(desc(Month))
+
+flights %>% select (ArrTime, TailNum) %>% arrange(ArrTime)
+flights %>% select (ArrTime, TailNum) %>% arrange(desc(ArrTime))
+flights %>% select(Year, contains("Taxi")) %>% arrange(desc(TaxiIn))
+flights %>% select (Year,contains("Taxi")) %>% arrange(TaxiIn)
+flights %>% select (Year,contains("Taxi")) %>% filter(TaxiIn %in% ("2")) %>% arrange(TaxiOut)
+
+
+```
+
+# Mutate: Add new variables 
+* create a new variable that are functions of existing variables 
+
+```{r}
+flights %>% select(Distance, AirTime) %>% mutate(speed=Distance/AirTime*60)
+flights<- flights %>% mutate(speed=Distance/AirTime*60)
+
+test=flights %>%
+  select(Distance, AirTime) %>%
+  mutate(speed=Distance/AirTime*60)
+
+```
+
+# summarise: Reduce variables to values
+
+* Primarily useful with data that has been grouped by one or more variables
+* `group_by` creates the groups that will be operated on
+* `summarise` uses the provided aggregation function to summarise each group
+
+```{r}
+# create a table grouped by Dest, and then summerise each group by taking the mean of ArrDelay.
+flights %>%
+  group_by(Dest) %>%
+  summarise(avg_delay = mean(ArrDelay, na.rm=TRUE))
+
+
+flights %>%
+  group_by(DayOfWeek) %>%
+  summarise(mean_AirTime=mean(AirTime, na.rm=TRUE))
+
+```
+
+
+* summarise_each allows you to apply the same summary function to multiple columns at once
+* Note: mutate_each is also available
+
+```{r}
+# for each carrier, calculate the percentage of flights cancelled or diverted
+flights %>% 
+  group_by(Dest) %>%
+  summarise(mean_cancelled=mean(Cancelled), mean_Diverted=mean(Diverted))
+
+flights %>%
+  group_by(Dest) %>%
+  summarise_each(funs(mean), Cancelled, Diverted)
+
+
+flights %>%
+  group_by(Dest) %>%
+  summarise(mean_Cancelled=mean(Cancelled,), na.rm=TRUE)
+
+
+# for each carrier, calculate the minimum and maximum arrivala and departure delays
+flights %>%
+  group_by(UniqueCarrier) %>%
+  summarise_each(funs(min(., na.rm=TRUE), max(.,na.rm=TRUE)), matches("Delay"))
+
+flights %>% 
+  group_by (Dest) %>%
+  summarise_each(funs(mean(., na.rm=TRUE), sd(., na.rm=TRUE)), Cancelled, Diverted)
+  
+flights %>%
+  group_by(TailNum) %>%
+  summarise_each(funs(mean(., na.rm=TRUE), var(., na.rm=TRUE)), ArrTime, DepTime)
+
+flights %>%
+  group_by(Origin) %>%
+  summarise_each(funs(mean(., na.rm=TRUE), sd(., na.rm=TRUE), min(., na.rm=TRUE), max(., na.rm=TRUE)), Distance, DepTime)
+
+```
+
+Helper function `n()` counts the number of rows in a group
+Helper function `n_distinct(vector)` counts the number of unique items in that vector
+
+```{r}
+# for each day of the year, count the total number of flights and sort in descending order
+flights %>%
+  group_by(Month, DayofMonth) %>%
+  summarise(flight_count=n()) %>%
+  arrange(desc(flight_count))
+
+
+flights %>%
+  group_by(DayOfWeek, DayofMonth) %>%
+  summarise(AirTime_n=n()) %>%
+  arrange(desc(AirTime_n))
+
+# rewrite more simply with the `tally` function 
+
+flights %>%
+  group_by(Month) %>%
+  tally
+
+flights %>%
+  group_by(Month, DayofMonth) %>%
+  tally()
+
+# for each destination, count the total number of flights and the number of distinct planes that flew there
+flights %>%
+  group_by(Dest) %>%
+  summarise(flight_count=n(), plane_count=n_distinct(TailNum))
+```
+
+* Grouping can sometimes be useful without summarsing 
+
+```{r}
+# For each destination, show the number of cancelled and not cancelled flights 
+
+flights %>%
+  group_by (Dest) %>%
+  select(Cancelled) %>%
+  table() %>%
+  head()
+
+flights %>%
+  group_by(DayofMonth) %>%
+  select(DayOfWeek) %>%
+  table() %>%
+  head()
+
+
+```
+
+
+## Window Functions
+* Aggregation function (like `mean`) takes n inputs and returns 1 value
+* [Window function] takes n inputs and returns n values
+* Includes ranking and ordering functions (like `min_rank`), offset functions (`lead` and `lag`), and cumulative aggregates (like `cummean`).
+
+```{r}
+# for each carrier, calculate which two days of the year they had their longest departure delays
+# note: smallest (not largest) value is ranked as 1, so you have to use `desc` to rank by largest value
+flights %>%
+  group_by(UniqueCarrier) %>%
+  select(Month, DayofMonth, DepDelay) %>%
+  filter(min_rank(desc(DepDelay))<=2) %>%
+  arrange(UniqueCarrier, desc(DepDelay))
+
+```
+
+
+```{r}
+# rewrite more simply with the `top_n` function
+flights %>%
+  group_by(UniqueCarrier) %>%
+  select(Month, DayofMonth, DepDelay) %>%
+  top_n(2) %>%
+  arrange(UniqueCarrier, desc(DepDelay))
+
+
+# for each month calculate the number if flights and the change from the previous month 
+flights %>%
+  group_by(Month) %>%
+  summarise(flight_count=n()) %>%
+  mutate(change=flight_count-lag(flight_count))
+
+# rewrite more simply with the ´tally´ function
+flights %>%
+  group_by(Month) %>%
+  tally() %>%
+  mutate(change=n-lag(n))
+
+```
+
+## Other useful Convenience Functions 
+
+```{r}
+# randomly sample a fixed number of rows, without replacement 
+flights %>% sample_n(5)
+
+# randomly sample fraction of rows, with replacement 
+flights %>% sample_n(5, replace=TRUE)
+
+flights %>% sample_frac(0.5, replace=TRUE)
+
+
+# dplyr approch: better formatting, and adapts to your screen width   
+glimpse(flights)
+
+```
+
+
+
+
+
+
+
+
+
+
+
